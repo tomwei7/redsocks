@@ -131,33 +131,33 @@ static const CCAlgorithm supported_ciphers_applecc[] =
 
 #endif
 
-static const int supported_ciphers_iv_size[] =
-{
-    0, 0, 16, 16, 16, 16, 8, 16, 16, 16, 8, 8, 8, 8, 16//, 8, 8
-};
-
-static const int supported_ciphers_key_size[] =
-{
-    0, 16, 16, 16, 24, 32, 16, 16, 24, 32, 16, 8, 16, 16, 16//, 32, 32
-};
+//static const int supported_ciphers_iv_size[] =
+//{
+//    0, 0, 16, 16, 16, 16, 8, 16, 16, 16, 8, 8, 8, 8, 16//, 8, 8
+//};
+//
+//static const int supported_ciphers_key_size[] =
+//{
+//    0, 16, 16, 16, 24, 32, 16, 16, 24, 32, 16, 8, 16, 16, 16//, 32, 32
+//};
 
 #define CIPHER_NUM (sizeof(supported_ciphers)/sizeof(supported_ciphers[0]))
 
-static int crypto_stream_xor_ic(uint8_t *c, const uint8_t *m, uint64_t mlen,
-                                const uint8_t *n, uint64_t ic, const uint8_t *k,
-                                int method)
-{
-/*
-    switch (method) {
-    case SALSA20:
-        return crypto_stream_salsa20_xor_ic(c, m, mlen, n, ic, k);
-    case CHACHA20:
-        return crypto_stream_chacha20_xor_ic(c, m, mlen, n, ic, k);
-    }
-*/    
-    // always return 0
-    return 0;
-}
+//static int crypto_stream_xor_ic(uint8_t *c, const uint8_t *m, uint64_t mlen,
+//                                const uint8_t *n, uint64_t ic, const uint8_t *k,
+//                                int method)
+//{
+///*
+//    switch (method) {
+//    case SALSA20:
+//        return crypto_stream_salsa20_xor_ic(c, m, mlen, n, ic, k);
+//    case CHACHA20:
+//        return crypto_stream_chacha20_xor_ic(c, m, mlen, n, ic, k);
+//    }
+//*/    
+//    // always return 0
+//    return 0;
+//}
 
 static int random_compare(const void *_x, const void *_y, uint32_t i,
                           uint64_t a)
@@ -547,9 +547,10 @@ static int cipher_context_init(const enc_info * info, cipher_ctx_t *ctx, int enc
     }
 #endif
 
-    cipher_evp_t *evp = &ctx->evp;
     const cipher_kt_t *cipher = get_cipher_type(method);
 #if defined(USE_CRYPTO_OPENSSL)
+	ctx->evp = EVP_CIPHER_CTX_new();
+    cipher_evp_t *evp = ctx->evp;
     if (cipher == NULL) {
         // Cipher is not found in OpenSSL library
         return -1;
@@ -642,7 +643,7 @@ static void cipher_context_set_iv(const enc_info * info, cipher_ctx_t *ctx, uint
     }
 #endif
 
-    cipher_evp_t *evp = &ctx->evp;
+    cipher_evp_t *evp = ctx->evp;
     if (evp == NULL) {
         //LOGE("cipher_context_set_iv(): Cipher context is null");
         return;
@@ -696,7 +697,7 @@ static void cipher_context_release(enc_info * info, cipher_ctx_t *ctx)
     }
 #endif
 
-    cipher_evp_t *evp = &ctx->evp;
+    cipher_evp_t *evp = ctx->evp;
 #if defined(USE_CRYPTO_OPENSSL)
     EVP_CIPHER_CTX_cleanup(evp);
 #elif defined(USE_CRYPTO_POLARSSL)
@@ -716,7 +717,7 @@ static int cipher_context_update(cipher_ctx_t *ctx, uint8_t *output, int *olen,
         return (ret == kCCSuccess) ? 1 : 0;
     }
 #endif
-    cipher_evp_t *evp = &ctx->evp;
+    cipher_evp_t *evp = ctx->evp;
 #if defined(USE_CRYPTO_OPENSSL)
     return EVP_CipherUpdate(evp, (uint8_t *)output, olen,
                             (const uint8_t *)input, (size_t)ilen);
@@ -916,7 +917,6 @@ static int enc_key_init(enc_info * info, int method, const char *pass)
     uint8_t iv[MAX_IV_LENGTH];
 
     cipher_kt_t *cipher = NULL;
-    cipher_kt_t cipher_info;
 
 
     if (method == SALSA20 || method == CHACHA20) {

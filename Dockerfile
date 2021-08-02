@@ -13,4 +13,4 @@ RUN set -x \
 	&& apt-get install -y --no-install-recommends --no-install-suggests libevent-core-2.1-7 libevent-extra-2.1-7 libssl1.1
 COPY --from=build /redsocks/redsocks /usr/bin/redsocks
 COPY --from=build /redsocks/docker/redsocks.conf /etc/redsocks.conf
-CMD ["/usr/bin/redsocks", "-c", "/etc/redsocks.conf"]
+CMD ["/usr/bin/redsocks2", "-c", "/etc/redsocks.conf"]
