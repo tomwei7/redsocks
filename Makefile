@@ -11,28 +11,8 @@ OS := $(shell uname)
 LIBS := -levent
 CFLAGS +=-fPIC -O3
 override CFLAGS += -D_BSD_SOURCE -D_DEFAULT_SOURCE -Wall
-ifeq ($(OS), Linux)
 override CFLAGS += -std=c99 -D_XOPEN_SOURCE=600
-endif
-ifeq ($(OS), Darwin)
-override CFLAGS +=-I/usr/local/opt/openssl/include -L/usr/local/opt/openssl/lib
-SHELL := /bin/bash
-OSX_VERSION := $(shell sw_vers -productVersion | cut -d '.' -f 1,2)
-OSX_ROOT_PATH := xnu
-OSX_HEADERS_PATH := $(OSX_ROOT_PATH)/$(OSX_VERSION)
-OSX_HEADERS := $(OSX_HEADERS_PATH)/net/pfvar.h $(OSX_HEADERS_PATH)/net/radix.h $(OSX_HEADERS_PATH)/libkern/tree.h
-override CFLAGS +=-I$(OSX_HEADERS_PATH)
-endif
 
-
-#LDFLAGS += -fwhole-program
-ifdef USE_CRYPTO_POLARSSL
-override LIBS += -lpolarssl
-override CFLAGS += -DUSE_CRYPTO_POLARSSL
-$(info Compile with PolarSSL.)
-CRYPTO := PolarSSL
-else
-$(info Compile with OpenSSL by default. To compile with PolarSSL, run 'make USE_CRYPTO_POLARSSL=true' instead.)
 CRYPTO := OpenSSL
 ifdef ENABLE_HTTPS_PROXY
 override OBJS += https-connect.o
@@ -40,9 +20,10 @@ override LIBS += -levent_openssl
 override CFLAGS += -DENABLE_HTTPS_PROXY
 $(info Compile with HTTPS proxy enabled.)
 endif
+
 override LIBS += -lssl -lcrypto
 override CFLAGS += -DUSE_CRYPTO_OPENSSL
-endif
+
 ifdef ENABLE_STATIC
 override LIBS += -ldl -lz
 override LDFLAGS += -Wl,-static -static -static-libgcc -s
@@ -98,16 +79,7 @@ gen/.build:
 
 base.c: $(CONF)
 
-ifeq ($(OS), Darwin)
-$(OSX_HEADERS_PATH)/net/pfvar.h:
-	mkdir -p $(OSX_HEADERS_PATH)/net && curl -o $(OSX_HEADERS_PATH)/net/pfvar.h https://raw.githubusercontent.com/opensource-apple/xnu/$(OSX_VERSION)/bsd/net/pfvar.h
-$(OSX_HEADERS_PATH)/net/radix.h:
-	mkdir -p $(OSX_HEADERS_PATH)/net && curl -o $(OSX_HEADERS_PATH)/net/radix.h https://raw.githubusercontent.com/opensource-apple/xnu/$(OSX_VERSION)/bsd/net/radix.h
-$(OSX_HEADERS_PATH)/libkern/tree.h:
-	mkdir -p $(OSX_HEADERS_PATH)/libkern && curl -o $(OSX_HEADERS_PATH)/libkern/tree.h https://raw.githubusercontent.com/opensource-apple/xnu/$(OSX_VERSION)/libkern/libkern/tree.h
-endif
-
-$(DEPS): $(OSX_HEADERS) $(SRCS)
+$(DEPS): $(SRCS)
 	$(CC) -MM $(CFLAGS) $(SRCS) 2>/dev/null >$(DEPS) || \
 	( \
 		for I in $(wildcard *.h); do \

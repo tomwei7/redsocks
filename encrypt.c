@@ -27,25 +27,7 @@
 #include <openssl/md5.h>
 #include <openssl/rand.h>
 
-#elif defined(USE_CRYPTO_POLARSSL)
-
-#include <polarssl/md5.h>
-#include <polarssl/entropy.h>
-#include <polarssl/ctr_drbg.h>
-#include <polarssl/version.h>
-#define CIPHER_UNSUPPORTED "unsupported"
-
-#include <time.h>
-#ifdef _WIN32
-#include <windows.h>
-#include <wincrypt.h>
-#else
-#include <stdio.h>
 #endif
-
-#endif
-
-// #include <sodium.h>
 
 #include "encrypt.h"
 
@@ -83,53 +65,6 @@ static const char * supported_ciphers[] =
 //    "salsa20",
 //    "chacha20"
 };
-
-#ifdef USE_CRYPTO_POLARSSL
-static const char * supported_ciphers_polarssl[] =
-{
-    "table",
-    "ARC4-128",
-    "ARC4-128",
-    "AES-128-CFB128",
-    "AES-192-CFB128",
-    "AES-256-CFB128",
-    "BLOWFISH-CFB64",
-    "CAMELLIA-128-CFB128",
-    "CAMELLIA-192-CFB128",
-    "CAMELLIA-256-CFB128",
-    CIPHER_UNSUPPORTED,
-    CIPHER_UNSUPPORTED,
-    CIPHER_UNSUPPORTED,
-    CIPHER_UNSUPPORTED,
-    CIPHER_UNSUPPORTED,
-//    "salsa20",
-//    "chacha20"
-};
-#endif
-
-#ifdef USE_CRYPTO_APPLECC
-static const CCAlgorithm supported_ciphers_applecc[] =
-{
-    kCCAlgorithmInvalid,
-    kCCAlgorithmRC4,
-    kCCAlgorithmRC4,
-    kCCAlgorithmAES,
-    kCCAlgorithmAES,
-    kCCAlgorithmAES,
-    kCCAlgorithmBlowfish,
-    kCCAlgorithmInvalid,
-    kCCAlgorithmInvalid,
-    kCCAlgorithmInvalid,
-    kCCAlgorithmCAST,
-    kCCAlgorithmDES,
-    kCCAlgorithmInvalid,
-    kCCAlgorithmRC2,
-    kCCAlgorithmInvalid,
-//    kCCAlgorithmInvalid,
-//    kCCAlgorithmInvalid
-};
-
-#endif
 
 //static const int supported_ciphers_iv_size[] =
 //{
@@ -239,16 +174,7 @@ static void merge_sort(uint8_t array[], int length,
 
 static unsigned char *enc_md5(const unsigned char *d, size_t n, unsigned char *md)
 {
-#if defined(USE_CRYPTO_OPENSSL)
     return MD5(d, n, md);
-#elif defined(USE_CRYPTO_POLARSSL)
-    static unsigned char m[16];
-    if (md == NULL) {
-        md = m;
-    }
-    md5(d, n, md);
-    return md;
-#endif
 }
 
 static void enc_table_init(enc_info * info, const char *pass)
@@ -280,31 +206,12 @@ static void enc_table_init(enc_info * info, const char *pass)
 
 int cipher_iv_size(const cipher_kt_t *cipher)
 {
-#if defined(USE_CRYPTO_OPENSSL)
     return EVP_CIPHER_iv_length(cipher);
-#elif defined(USE_CRYPTO_POLARSSL)
-    if (cipher == NULL) {
-        return 0;
-    }
-    return cipher->iv_size;
-#endif
 }
 
 int cipher_key_size(const cipher_kt_t *cipher)
 {
-#if defined(USE_CRYPTO_OPENSSL)
     return EVP_CIPHER_key_length(cipher);
-#elif defined(USE_CRYPTO_POLARSSL)
-    if (cipher == NULL) {
-        return 0;
-    }
-    /* Override PolarSSL 32 bit default key size with sane 128 bit default */
-    if (cipher->base != NULL && POLARSSL_CIPHER_ID_BLOWFISH ==
-        cipher->base->cipher) {
-        return 128 / 8;
-    }
-    return cipher->key_length / 8;
-#endif
 }
 
 int bytes_to_key(const cipher_kt_t *cipher, const digest_type_t *md,
@@ -312,164 +219,12 @@ int bytes_to_key(const cipher_kt_t *cipher, const digest_type_t *md,
 {
     size_t datal;
     datal = strlen((const char *)pass);
-#if defined(USE_CRYPTO_OPENSSL)
     return EVP_BytesToKey(cipher, md, NULL, pass, datal, 1, key, iv);
-#elif defined(USE_CRYPTO_POLARSSL)
-    md_context_t c;
-    unsigned char md_buf[MAX_MD_SIZE];
-    int niv;
-    int nkey;
-    int addmd;
-    unsigned int mds;
-    unsigned int i;
-    int rv;
-
-    nkey = cipher_key_size(cipher);
-    niv = cipher_iv_size(cipher);
-    rv = nkey;
-    if (pass == NULL) {
-        return nkey;
-    }
-
-    memset(&c, 0, sizeof(md_context_t));
-    if (md_init_ctx(&c, md)) {
-        return 0;
-    }
-    addmd = 0;
-    mds = md_get_size(md);
-    for (;; ) {
-        int error;
-        do {
-            error = 1;
-            if (md_starts(&c)) {
-                break;
-            }
-            if (addmd) {
-                if (md_update(&c, &(md_buf[0]), mds)) {
-                    break;
-                }
-            } else {
-                addmd = 1;
-            }
-            if (md_update(&c, pass, datal)) {
-                break;
-            }
-            if (md_finish(&c, &(md_buf[0]))) {
-                break;
-            }
-            error = 0;
-        } while (0);
-        if (error) {
-            md_free_ctx(&c);
-            memset(md_buf, 0, MAX_MD_SIZE);
-            return 0;
-        }
-
-        i = 0;
-        if (nkey) {
-            for (;; ) {
-                if (nkey == 0) {
-                    break;
-                }
-                if (i == mds) {
-                    break;
-                }
-                if (key != NULL) {
-                    *(key++) = md_buf[i];
-                }
-                nkey--;
-                i++;
-            }
-        }
-        if (niv && (i != mds)) {
-            for (;; ) {
-                if (niv == 0) {
-                    break;
-                }
-                if (i == mds) {
-                    break;
-                }
-                if (iv != NULL) {
-                    *(iv++) = md_buf[i];
-                }
-                niv--;
-                i++;
-            }
-        }
-        if ((nkey == 0) && (niv == 0)) {
-            break;
-        }
-    }
-    md_free_ctx(&c);
-    memset(md_buf, 0, MAX_MD_SIZE);
-    return rv;
-#endif
 }
 
 int rand_bytes(uint8_t *output, int len)
 {
-#if defined(USE_CRYPTO_OPENSSL)
     return RAND_bytes(output, len);
-#elif defined(USE_CRYPTO_POLARSSL)
-    static entropy_context ec = {};
-    static ctr_drbg_context cd_ctx = {};
-    static unsigned char rand_initialised = 0;
-    const size_t blen = min(len, CTR_DRBG_MAX_REQUEST);
-
-    if (!rand_initialised) {
-#ifdef _WIN32
-        HCRYPTPROV hProvider;
-        union {
-            unsigned __int64 seed;
-            BYTE buffer[8];
-        } rand_buffer;
-
-        hProvider = 0;
-        if (CryptAcquireContext(&hProvider, 0, 0, PROV_RSA_FULL, \
-                                CRYPT_VERIFYCONTEXT | CRYPT_SILENT)) {
-            CryptGenRandom(hProvider, 8, rand_buffer.buffer);
-            CryptReleaseContext(hProvider, 0);
-        } else {
-            rand_buffer.seed = (unsigned __int64)clock();
-        }
-#else
-        FILE *urand;
-        union {
-            uint64_t seed;
-            uint8_t buffer[8];
-        } rand_buffer;
-
-        urand = fopen("/dev/urandom", "r");
-        if (urand) {
-            int read = fread(&rand_buffer.seed, sizeof(rand_buffer.seed), 1,
-                             urand);
-            fclose(urand);
-            if (read <= 0) {
-                rand_buffer.seed = (uint64_t)clock();
-            }
-        } else {
-            rand_buffer.seed = (uint64_t)clock();
-        }
-#endif
-        entropy_init(&ec);
-        if (ctr_drbg_init(&cd_ctx, entropy_func, &ec,
-                          (const unsigned char *)rand_buffer.buffer, 8) != 0) {
-#if POLARSSL_VERSION_NUMBER >= 0x01030000
-            entropy_free(&ec);
-#endif
-            //FATAL("Failed to initialize random generator");
-        }
-        rand_initialised = 1;
-    }
-    while (len > 0) {
-        if (ctr_drbg_random(&cd_ctx, output, blen) != 0) {
-            return 0;
-        }
-        output += blen;
-        len -= blen;
-    }
-    return 1;
-#endif
 }
 
 const cipher_kt_t *get_cipher_type(int method)
@@ -487,18 +242,8 @@ const cipher_kt_t *get_cipher_type(int method)
         return NULL;
     }
 */
-#if defined(USE_CRYPTO_OPENSSL)
     const char *ciphername = supported_ciphers[method];
     return EVP_get_cipherbyname(ciphername);
-#elif defined(USE_CRYPTO_POLARSSL)
-    const char *polarname = supported_ciphers_polarssl[method];
-    if (strcmp(polarname, CIPHER_UNSUPPORTED) == 0) {
-        //LOGE("Cipher %s currently is not supported by PolarSSL library",
-        //     ciphername);
-        return NULL;
-    }
-    return cipher_info_from_string(polarname);
-#endif
 }
 
 const digest_type_t *get_digest_type(const char *digest)
@@ -508,11 +253,7 @@ const digest_type_t *get_digest_type(const char *digest)
         return NULL;
     }
 
-#if defined(USE_CRYPTO_OPENSSL)
     return EVP_get_digestbyname(digest);
-#elif defined(USE_CRYPTO_POLARSSL)
-    return md_info_from_string(digest);
-#endif
 }
 
 static int cipher_context_init(const enc_info * info, cipher_ctx_t *ctx, int enc)
@@ -528,27 +269,7 @@ static int cipher_context_init(const enc_info * info, cipher_ctx_t *ctx, int enc
         return;
     }
 */
-#if defined(USE_CRYPTO_APPLECC)
-    cipher_cc_t *cc = &ctx->cc;
-    cc->cryptor = NULL;
-    cc->cipher = supported_ciphers_applecc[method];
-    if (cc->cipher == kCCAlgorithmInvalid) {
-        cc->valid = kCCContextInvalid;
-    } else {
-        cc->valid = kCCContextValid;
-        if (cc->cipher == kCCAlgorithmRC4) {
-            cc->mode = kCCModeRC4;
-            cc->padding = ccNoPadding;
-        } else {
-            cc->mode = kCCModeCFB;
-            cc->padding = ccPKCS7Padding;
-        }
-        return 0;
-    }
-#endif
-
     const cipher_kt_t *cipher = get_cipher_type(method);
-#if defined(USE_CRYPTO_OPENSSL)
 	ctx->evp = EVP_CIPHER_CTX_new();
     cipher_evp_t *evp = ctx->evp;
     if (cipher == NULL) {
@@ -568,16 +289,6 @@ static int cipher_context_init(const enc_info * info, cipher_ctx_t *ctx, int enc
     if (method > RC4_MD5) {
         EVP_CIPHER_CTX_set_padding(evp, 1);
     }
-#elif defined(USE_CRYPTO_POLARSSL)
-    if (cipher == NULL) {
-        // Cipher is not found in PolarSSL library
-        return -1;
-    }
-    if (cipher_init_ctx(evp, cipher) != 0) {
-        // Cannot initialize PolarSSL cipher context
-        return -1;
-    }
-#endif
     return 0;
 }
 
@@ -610,70 +321,15 @@ static void cipher_context_set_iv(const enc_info * info, cipher_ctx_t *ctx, uint
         true_key = info->key;
     }
 
-#ifdef USE_CRYPTO_APPLECC
-    cipher_cc_t *cc = &ctx->cc;
-    if (cc->valid == kCCContextValid) {
-        memcpy(cc->iv, iv, iv_len);
-        memcpy(cc->key, true_key, info->key_len);
-        cc->iv_len = iv_len;
-        cc->key_len = info->key_len;
-        cc->encrypt = enc ? kCCEncrypt : kCCDecrypt;
-        if (cc->cryptor != NULL) {
-            CCCryptorRelease(cc->cryptor);
-            cc->cryptor = NULL;
-        }
-
-        CCCryptorStatus ret;
-        ret = CCCryptorCreateWithMode(
-            cc->encrypt,
-            cc->mode,
-            cc->cipher,
-            cc->padding,
-            cc->iv, cc->key, cc->key_len,
-            NULL, 0, 0, 0,
-            &cc->cryptor);
-        if (ret != kCCSuccess) {
-            if (cc->cryptor != NULL) {
-                CCCryptorRelease(cc->cryptor);
-                cc->cryptor = NULL;
-            }
-            //FATAL("Cannot set CommonCrypto key and IV");
-        }
-        return;
-    }
-#endif
-
     cipher_evp_t *evp = ctx->evp;
     if (evp == NULL) {
         //LOGE("cipher_context_set_iv(): Cipher context is null");
         return;
     }
-#if defined(USE_CRYPTO_OPENSSL)
     if (!EVP_CipherInit_ex(evp, NULL, NULL, true_key, iv, enc)) {
         EVP_CIPHER_CTX_cleanup(evp);
         //FATAL("Cannot set key and IV");
     }
-#elif defined(USE_CRYPTO_POLARSSL)
-    if (cipher_setkey(evp, true_key, info->key_len * 8, enc) != 0) {
-        cipher_free_ctx(evp);
-        //FATAL("Cannot set PolarSSL cipher key");
-    }
-#if POLARSSL_VERSION_NUMBER >= 0x01030000
-    if (cipher_set_iv(evp, iv, iv_len) != 0) {
-        cipher_free_ctx(evp);
-        //FATAL("Cannot set PolarSSL cipher IV");
-    }
-    if (cipher_reset(evp) != 0) {
-        cipher_free_ctx(evp);
-        //FATAL("Cannot finalize PolarSSL cipher context");
-    }
-#else
-    if (cipher_reset(evp, iv) != 0) {
-        cipher_free_ctx(evp);
-        //FATAL("Cannot set PolarSSL cipher IV");
-    }
-#endif
-#endif
 
 #ifdef DEBUG
     dump("IV", (char *)iv, iv_len);
@@ -686,45 +342,16 @@ static void cipher_context_release(enc_info * info, cipher_ctx_t *ctx)
         return;
     }
 
-#ifdef USE_CRYPTO_APPLECC
-    cipher_cc_t *cc = &ctx->cc;
-    if (cc->cryptor != NULL) {
-        CCCryptorRelease(cc->cryptor);
-        cc->cryptor = NULL;
-    }
-    if (cc->valid == kCCContextValid) {
-        return;
-    }
-#endif
-
     cipher_evp_t *evp = ctx->evp;
-#if defined(USE_CRYPTO_OPENSSL)
     EVP_CIPHER_CTX_cleanup(evp);
-#elif defined(USE_CRYPTO_POLARSSL)
-    cipher_free_ctx(evp);
-#endif
 }
 
 static int cipher_context_update(cipher_ctx_t *ctx, uint8_t *output, int *olen,
                                  const uint8_t *input, int ilen)
 {
-#ifdef USE_CRYPTO_APPLECC
-    cipher_cc_t *cc = &ctx->cc;
-    if (cc->valid == kCCContextValid) {
-        CCCryptorStatus ret;
-        ret = CCCryptorUpdate(cc->cryptor, input, ilen, output,
-                              ilen, (size_t *)olen);
-        return (ret == kCCSuccess) ? 1 : 0;
-    }
-#endif
     cipher_evp_t *evp = ctx->evp;
-#if defined(USE_CRYPTO_OPENSSL)
     return EVP_CipherUpdate(evp, (uint8_t *)output, olen,
                             (const uint8_t *)input, (size_t)ilen);
-#elif defined(USE_CRYPTO_POLARSSL)
-    return !cipher_update(evp, (const uint8_t *)input, (size_t)ilen,
-                          (uint8_t *)output, (size_t *)olen);
-#endif
 }
 
 /* Calculate buffer size required for encrypt/decrypt data */
@@ -732,20 +359,10 @@ size_t ss_calc_buffer_size(struct enc_ctx * ctx, size_t ilen)
 {
     int method = ctx->info->method;
     const cipher_kt_t *cipher = get_cipher_type(method);
-#if defined(USE_CRYPTO_OPENSSL)
     if (ctx->init)
         return ilen + EVP_CIPHER_block_size(cipher); 
     else
         return EVP_CIPHER_iv_length(cipher) + ilen + EVP_CIPHER_block_size(cipher); 
-#elif defined(USE_CRYPTO_POLARSSL)
-    if (cipher == NULL) {
-        return ilen;
-    }
-    if (ctx->init)
-        return ilen + cipher_get_block_size(&ctx->evp.evp);
-    else
-        return cipher->iv_size + ilen + cipher_get_block_size(&ctx->evp.evp);
-#endif
 }
 
 int ss_encrypt(struct enc_ctx *ctx, char *plaintext, size_t plen,
@@ -910,50 +527,13 @@ static int enc_key_init(enc_info * info, int method, const char *pass)
     if (method <= TABLE || method >= CIPHER_NUM)
         return -1;
 
-#if defined(USE_CRYPTO_OPENSSL)
     OpenSSL_add_all_algorithms();
-#endif
 
     uint8_t iv[MAX_IV_LENGTH];
 
     cipher_kt_t *cipher = NULL;
 
-
-    if (method == SALSA20 || method == CHACHA20) {
-/*    
-        if (sodium_init() == -1) {
-            //FATAL("Failed to initialize sodium");
-        }
-        // Fake cipher
-        cipher = (cipher_kt_t *)&cipher_info;
-#if defined(USE_CRYPTO_OPENSSL)
-        cipher->key_len = supported_ciphers_key_size[method];
-        cipher->iv_len = supported_ciphers_iv_size[method];
-#endif
-#if defined(USE_CRYPTO_POLARSSL)
-        cipher->base = NULL;
-        cipher->key_length = supported_ciphers_key_size[method] * 8;
-        cipher->iv_size = supported_ciphers_iv_size[method];
-#endif
-*/
-    } else {
-        cipher = (cipher_kt_t *)get_cipher_type(method);
-    }
-
-    if (cipher == NULL) {
-        do {
-#if defined(USE_CRYPTO_POLARSSL) && defined(USE_CRYPTO_APPLECC)
-            if (supported_ciphers_applecc[method] != kCCAlgorithmInvalid) {
-                cipher_info.base = NULL;
-                cipher_info.key_length = supported_ciphers_key_size[method] * 8;
-                cipher_info.iv_size = supported_ciphers_iv_size[method];
-                cipher = (cipher_kt_t *)&cipher_info;
-                break;
-            }
-#endif
-            return -1;
-        } while (0);
-    }
+	cipher = (cipher_kt_t *)get_cipher_type(method);
 
     const digest_type_t *md = get_digest_type("MD5");
     if (md == NULL)

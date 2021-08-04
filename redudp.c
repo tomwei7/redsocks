@@ -155,28 +155,28 @@ fail:
     return -1;
 }
 
-static void bound_udp4_put(const struct sockaddr_in *addr)
-{
-    struct bound_udp4_key key;
-    struct bound_udp4 **pnode, *node;
-    void *parent;
-
-    bound_udp4_mkkey(&key, addr);
-    pnode = tfind(&key, &root_bound_udp4, bound_udp4_cmp);
-    assert(pnode && (*pnode)->ref > 0);
-
-    node = *pnode;
-
-    node->ref--;
-    if (node->ref)
-        return;
-
-    parent = tdelete(node, &root_bound_udp4, bound_udp4_cmp);
-    assert(parent);
-
-    close(node->fd); // expanding `pnode` to avoid use after free
-    free(node);
-}
+//static void bound_udp4_put(const struct sockaddr_in *addr)
+//{
+//    struct bound_udp4_key key;
+//    struct bound_udp4 **pnode, *node;
+//    void *parent;
+//
+//    bound_udp4_mkkey(&key, addr);
+//    pnode = tfind(&key, &root_bound_udp4, bound_udp4_cmp);
+//    assert(pnode && (*pnode)->ref > 0);
+//
+//    node = *pnode;
+//
+//    node->ref--;
+//    if (node->ref)
+//        return;
+//
+//    parent = tdelete(node, &root_bound_udp4, bound_udp4_cmp);
+//    assert(parent);
+//
+//    close(node->fd); // expanding `pnode` to avoid use after free
+//    free(node);
+//}
 
 /*
  * This procedure is ued to audit tree items for destination addresses.
